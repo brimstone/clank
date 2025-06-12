@@ -1,10 +1,13 @@
 package prompt
 
 import (
+	"embed"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -12,6 +15,23 @@ import (
 	"github.com/ollama/ollama/api"
 	"github.com/spf13/cobra"
 )
+
+//go:embed all:templates/*
+var templates embed.FS
+
+// Lifted from viper's source.
+func userHomeDir() string {
+	if runtime.GOOS == "windows" {
+		home := os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
+		if home == "" {
+			home = os.Getenv("USERPROFILE")
+		}
+
+		return home
+	}
+
+	return os.Getenv("HOME")
+}
 
 func Cmd() *cobra.Command {
 	var promptCmd = &cobra.Command{
@@ -54,12 +74,40 @@ to quickly create a Cobra application.`,
 	})
 	promptCmd.Flags().String("prefix", "", "Required prefix for response")
 	promptCmd.Flags().StringP("system", "s", "", "System prompt")
+	promptCmd.Flags().StringP("template", "t", "", "Template for system and user prompts")
+
+	promptCmd.RegisterFlagCompletionFunc("template", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		var t []string
+
+		// Check files on disk
+		files, err := os.ReadDir(filepath.Join(userHomeDir(), ".ollamacli", "templates"))
+		if err == nil {
+			for _, f := range files {
+				// TODO check that there's at least a system.md in this directory
+				t = append(t, f.Name())
+			}
+		}
+
+		files, err = templates.ReadDir("templates")
+		if err != nil {
+			slog.Error("Unable to read internal templates",
+				"err", err,
+			)
+			return nil, cobra.ShellCompDirectiveError
+		}
+		for _, f := range files {
+			t = append(t, f.Name())
+		}
+
+		return t, 0
+	})
 
 	return promptCmd
 }
 
 func Run(cmd *cobra.Command, args []string) error {
 
+	// Setup ollama client
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
 		slog.Error("Unable to create client",
@@ -68,6 +116,7 @@ func Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Figure out which model to use
 	model, err := cmd.Flags().GetString("model")
 	if err != nil {
 		return err
@@ -79,6 +128,7 @@ func Run(cmd *cobra.Command, args []string) error {
 	}
 	var models []string
 
+	// Sort models by size, largest on top
 	sort.Slice(modelsList.Models, func(i, j int) bool {
 		return modelsList.Models[i].Size > modelsList.Models[j].Size
 	})
@@ -105,12 +155,32 @@ func Run(cmd *cobra.Command, args []string) error {
 	}
 
 	slog.Debug("model", "model", model)
+
+	// Start collecting messages for the model
 	var messages []api.Message
 
+	var systemPrompt string
+	// If a template is called, try to find it in the embedded file system
+	templateName, err := cmd.Flags().GetString("template")
+	if templateName != "" {
+		// Look for the template on disk first
+		systemPromptBytes, err := os.ReadFile(filepath.Join(userHomeDir(), ".ollamacli", "templates", templateName, "system.md"))
+		if err != nil {
+			// Then look internal
+			systemPromptBytes, err = templates.ReadFile("templates/" + templateName + "/system.md")
+		}
+		if err != nil {
+			return fmt.Errorf("can't find template named %s", templateName)
+		}
+		systemPrompt = string(systemPromptBytes)
+	}
+
 	// Add system message, if it exists
-	systemPrompt, err := cmd.Flags().GetString("system")
-	if err != nil {
-		return err
+	if systemPrompt == "" {
+		systemPrompt, err = cmd.Flags().GetString("system")
+		if err != nil {
+			return err
+		}
 	}
 	if systemPrompt != "" {
 		_, err := os.Stat(systemPrompt)
