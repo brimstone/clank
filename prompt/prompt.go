@@ -75,7 +75,6 @@ to quickly create a Cobra application.`,
 	promptCmd.Flags().String("prefix", "", "Required prefix for response")
 	promptCmd.Flags().StringP("system", "s", "", "System prompt")
 	promptCmd.Flags().StringP("template", "t", "", "Template for system and user prompts")
-
 	promptCmd.RegisterFlagCompletionFunc("template", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		var t []string
 
@@ -101,6 +100,7 @@ to quickly create a Cobra application.`,
 
 		return t, 0
 	})
+	promptCmd.Flags().StringSliceP("image", "i", nil, "Images to include in the user prompt")
 
 	return promptCmd
 }
@@ -115,6 +115,8 @@ func Run(cmd *cobra.Command, args []string) error {
 		)
 		return err
 	}
+
+	imagePaths, err := cmd.Flags().GetStringSlice("image")
 
 	// Figure out which model to use
 	model, err := cmd.Flags().GetString("model")
@@ -135,6 +137,7 @@ func Run(cmd *cobra.Command, args []string) error {
 
 	for _, m := range modelsList.Models {
 		// TODO consider tool support
+		// If len(imagePaths) > 0, then only pick a model supporting vision
 		models = append(models, m.Name)
 	}
 	if model == "" {
@@ -220,12 +223,23 @@ func Run(cmd *cobra.Command, args []string) error {
 		userPrompt += string(stdin)
 	}
 
-	if userPrompt != "" {
-		messages = append(messages, api.Message{
-			Role:    "user",
-			Content: userPrompt,
-		})
+	var images []api.ImageData
+	for _, p := range imagePaths {
+		var d api.ImageData
+		d, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		images = append(images, d)
 	}
+
+	//if userPrompt != "" {
+	messages = append(messages, api.Message{
+		Role:    "user",
+		Content: userPrompt,
+		Images:  images,
+	})
+	//}
 
 	prefix, err := cmd.Flags().GetString("prefix")
 	if err != nil {
