@@ -14,6 +14,7 @@ import (
 
 	"github.com/ollama/ollama/api"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 //go:embed all:templates/*
@@ -101,6 +102,7 @@ to quickly create a Cobra application.`,
 		return t, 0
 	})
 	promptCmd.Flags().StringSliceP("image", "i", nil, "Images to include in the user prompt")
+	promptCmd.Flags().Bool("unload", false, "Unload the model immediately after generation")
 
 	return promptCmd
 }
@@ -137,8 +139,19 @@ func Run(cmd *cobra.Command, args []string) error {
 
 	for _, m := range modelsList.Models {
 		// TODO consider tool support
-		// If len(imagePaths) > 0, then only pick a model supporting vision
-		models = append(models, m.Name)
+		if len(imagePaths) > 0 {
+			model, err := client.Show(cmd.Context(), &api.ShowRequest{
+				Model: m.Name,
+			})
+			if err != nil {
+				return fmt.Errorf("error showing models")
+			}
+			if slices.Contains(model.Capabilities, "vision") {
+				models = append(models, m.Name)
+			}
+		} else {
+			models = append(models, m.Name)
+		}
 	}
 	if model == "" {
 		model = models[0]
@@ -246,23 +259,58 @@ func Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	unload, err := cmd.Flags().GetBool("unload")
+	if err != nil {
+		return err
+	}
 	// Pick a model and start the ChatRequest object
 	req := &api.ChatRequest{
 		Model:    model,
 		Messages: messages,
 	}
 
+	if unload {
+		req.KeepAlive = &api.Duration{0}
+	}
+
 	var content string
 
+	var thinking bool
 	respFunc := func(resp api.ChatResponse) error {
-		content += resp.Message.Content
-		// TODO handle <think> models
-		if prefix != "" && len(content) > len(prefix) {
-			if !strings.HasPrefix(content, prefix) {
-				return fmt.Errorf("response failed to include required prefix")
+		if resp.Message.Content == "<think>" {
+			thinking = true
+		}
+
+		if !thinking {
+			content += resp.Message.Content
+			// TODO handle <think> models
+			if prefix != "" && len(content) > len(prefix) {
+				if !strings.HasPrefix(content, prefix) {
+					return fmt.Errorf("response failed to include required prefix")
+				}
 			}
 		}
-		fmt.Print(resp.Message.Content)
+		// If it's not a standard terminal, don't worry about it
+		if thinking {
+			if resp.Message.Content == "</think>" {
+				thinking = false
+			}
+			if term.IsTerminal(int(os.Stderr.Fd())) {
+				if resp.Message.Content == "<think>" {
+					// print code for gray text
+					fmt.Fprintf(os.Stderr, "\x1b[38;2;128;128;128m")
+					return nil
+				} else if resp.Message.Content == "</think>" {
+					fmt.Fprintf(os.Stderr, "\x1b[0m")
+					return nil
+				}
+				fmt.Fprintf(os.Stderr, "%s", resp.Message.Content)
+				return nil
+			}
+		}
+
+		fmt.Printf("%s", resp.Message.Content)
+
 		return nil
 	}
 
