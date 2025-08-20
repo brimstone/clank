@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io"
@@ -34,6 +35,41 @@ func userHomeDir() string {
 	return os.Getenv("HOME")
 }
 
+func getValidModels(ctx context.Context, client *api.Client, imagePaths, toolPaths []string) ([]string, error) {
+	modelsList, err := client.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var models []string
+
+	// Sort models by size, largest on top
+	sort.Slice(modelsList.Models, func(i, j int) bool {
+		return modelsList.Models[i].Size > modelsList.Models[j].Size
+	})
+
+	for _, m := range modelsList.Models {
+		// TODO consider tool support
+		if len(imagePaths) == 0 && len(toolPaths) == 0 {
+			models = append(models, m.Name)
+			continue
+		}
+		model, err := client.Show(ctx, &api.ShowRequest{
+			Model: m.Name,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error showing models")
+		}
+		if len(imagePaths) > 0 && !slices.Contains(model.Capabilities, "vision") {
+			continue
+		}
+		if len(toolPaths) > 0 && !slices.Contains(model.Capabilities, "tools") {
+			continue
+		}
+		models = append(models, m.Name)
+	}
+	return models, nil
+}
+
 func Cmd() *cobra.Command {
 	var promptCmd = &cobra.Command{
 		Use:   "prompt",
@@ -57,25 +93,27 @@ to quickly create a Cobra application.`,
 			return nil, cobra.ShellCompDirectiveError
 		}
 
-		modelsList, err := client.List(cmd.Context())
+		imagePaths, err := cmd.Flags().GetStringSlice("image")
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
-		var models []string
 
-		sort.Slice(modelsList.Models, func(i, j int) bool {
-			return modelsList.Models[i].Size > modelsList.Models[j].Size
-		})
-
-		for _, m := range modelsList.Models {
-			// TODO consider tool support
-			models = append(models, m.Name)
+		toolPaths, err := cmd.Flags().GetStringSlice("tool")
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
 		}
+
+		models, err := getValidModels(cmd.Context(), client, imagePaths, toolPaths)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
 		return models, 0
 	})
 	promptCmd.Flags().String("prefix", "", "Required prefix for response")
 	promptCmd.Flags().StringP("system", "s", "", "System prompt")
 	promptCmd.Flags().StringP("template", "t", "", "Template for system and user prompts")
+	promptCmd.Flags().StringSlice("tool", nil, "URL or command for MCP tool")
 	promptCmd.RegisterFlagCompletionFunc("template", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		var t []string
 
@@ -119,6 +157,19 @@ func Run(cmd *cobra.Command, args []string) error {
 	}
 
 	imagePaths, err := cmd.Flags().GetStringSlice("image")
+	if err != nil {
+		return err
+	}
+
+	toolPaths, err := cmd.Flags().GetStringSlice("tool")
+	if err != nil {
+		return err
+	}
+
+	models, err := getValidModels(cmd.Context(), client, imagePaths, toolPaths)
+	if err != nil {
+		return err
+	}
 
 	// Figure out which model to use
 	model, err := cmd.Flags().GetString("model")
@@ -126,33 +177,6 @@ func Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	modelsList, err := client.List(cmd.Context())
-	if err != nil {
-		return err
-	}
-	var models []string
-
-	// Sort models by size, largest on top
-	sort.Slice(modelsList.Models, func(i, j int) bool {
-		return modelsList.Models[i].Size > modelsList.Models[j].Size
-	})
-
-	for _, m := range modelsList.Models {
-		// TODO consider tool support
-		if len(imagePaths) > 0 {
-			model, err := client.Show(cmd.Context(), &api.ShowRequest{
-				Model: m.Name,
-			})
-			if err != nil {
-				return fmt.Errorf("error showing models")
-			}
-			if slices.Contains(model.Capabilities, "vision") {
-				models = append(models, m.Name)
-			}
-		} else {
-			models = append(models, m.Name)
-		}
-	}
 	if model == "" {
 		model = models[0]
 	}
