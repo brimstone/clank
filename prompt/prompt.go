@@ -7,12 +7,15 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/go-andiamo/splitter"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ollama/ollama/api"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -278,6 +281,66 @@ func Run(cmd *cobra.Command, args []string) error {
 	})
 	//}
 
+	// TODO add any tool options to messages
+	type mcpClient struct {
+		CS    *mcp.ClientSession
+		Tools []string
+	}
+	var mcpClients []mcpClient
+	var toolFuncs []api.Tool
+	for _, t := range toolPaths {
+		var cs *mcp.ClientSession
+		//determine if the toolpath is a command on the system, or a http(s?) SSE server
+		mcpClientClient := mcp.NewClient(&mcp.Implementation{Name: "mcp-client", Version: "v1.0.0"}, nil)
+		if strings.HasPrefix(t, "http") {
+			cs, err = mcpClientClient.Connect(cmd.Context(), mcp.NewStreamableClientTransport(t, nil))
+			if err != nil {
+				return err
+			}
+		} else {
+			spaceSplitter, err := splitter.NewSplitter(' ', splitter.DoubleQuotes)
+			if err != nil {
+				return err
+			}
+
+			toolCmd, err := spaceSplitter.Split(t)
+			if err != nil {
+				return err
+			}
+			mcpCmd := exec.Command(toolCmd[0], toolCmd[1:]...)
+			//TODO add debug option mcpCmd.Stderr = os.Stderr
+			cs, err = mcpClientClient.Connect(cmd.Context(), mcp.NewCommandTransport(mcpCmd))
+			if err != nil {
+				return err
+			}
+		}
+		mcpC := mcpClient{CS: cs}
+		tools, err := cs.ListTools(cmd.Context(), nil)
+		if err != nil {
+			return err
+		}
+		for _, tool := range tools.Tools {
+			// TODO add debug option fmt.Printf("Tool: %s: %#v\n", tool.Name, tool.InputSchema)
+			var f api.ToolFunction
+			f.Name = tool.Name
+			f.Description = tool.Description
+			f.Parameters.Required = tool.InputSchema.Required
+			f.Parameters.Properties = make(map[string]api.ToolProperty)
+			for p, v := range tool.InputSchema.Properties {
+				f.Parameters.Properties[p] = api.ToolProperty{
+					Type:        []string{v.Type},
+					Description: v.Description,
+				}
+			}
+
+			toolFuncs = append(toolFuncs, api.Tool{
+				Function: f,
+			})
+			mcpC.Tools = append(mcpC.Tools, tool.Name)
+		}
+		mcpClients = append(mcpClients, mcpC)
+	}
+
 	prefix, err := cmd.Flags().GetString("prefix")
 	if err != nil {
 		return err
@@ -287,20 +350,48 @@ func Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Pick a model and start the ChatRequest object
-	req := &api.ChatRequest{
-		Model:    model,
-		Messages: messages,
-	}
 
-	if unload {
-		req.KeepAlive = &api.Duration{0}
-	}
+	// TODO add debug for this
+	/*
+		for _, m := range messages {
+			fmt.Printf("%s: %v\n", m.Role, m.Content)
+		}
+	*/
 
+	callAgain := false
 	var content string
-
 	var thinking bool
 	respFunc := func(resp api.ChatResponse) error {
+		if len(resp.Message.ToolCalls) > 0 {
+			callAgain = true
+			messages = append(messages, resp.Message)
+			for _, c := range resp.Message.ToolCalls {
+				// TODO add debug for this  fmt.Printf("message: %#v\n", resp)
+				// TODO fmt.Printf("Calling function %s with %#v\n", c.Function.Name, c.Function.Arguments)
+				for _, mcpC := range mcpClients {
+					if slices.Contains(mcpC.Tools, c.Function.Name) {
+						toolRes, err := mcpC.CS.CallTool(cmd.Context(), &mcp.CallToolParams{
+							Name:      c.Function.Name,
+							Arguments: c.Function.Arguments,
+						})
+						if err != nil {
+							return err
+						}
+						for _, content := range toolRes.Content {
+							//TODO add debug for this fmt.Printf("tool res: %#v\n", content)
+							switch tc := content.(type) {
+							case *mcp.TextContent:
+								messages = append(messages, api.Message{
+									Role:    "tool",
+									Content: tc.Text,
+								})
+							}
+						}
+					}
+				}
+			}
+			return nil
+		}
 		if resp.Message.Content == "<think>" {
 			thinking = true
 		}
@@ -338,7 +429,24 @@ func Run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	err = client.Chat(cmd.Context(), req, respFunc)
+	for {
+		// Pick a model and start the ChatRequest object
+		req := &api.ChatRequest{
+			Model:    model,
+			Messages: messages,
+			Tools:    toolFuncs,
+		}
+
+		if unload {
+			req.KeepAlive = &api.Duration{0}
+		}
+
+		err = client.Chat(cmd.Context(), req, respFunc)
+		if !callAgain {
+			break
+		}
+		callAgain = false
+	}
 	fmt.Println()
 	return err
 }
