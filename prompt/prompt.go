@@ -3,6 +3,7 @@ package prompt
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/brimstone/ollamacli/version"
 	"github.com/go-andiamo/splitter"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ollama/ollama/api"
@@ -38,12 +40,105 @@ func userHomeDir() string {
 	return os.Getenv("HOME")
 }
 
-func getValidModels(ctx context.Context, client *api.Client, imagePaths, toolPaths []string) ([]string, error) {
+type mcpClient struct {
+	CS    *mcp.ClientSession
+	Tools []string
+}
+
+func getToolsFromClaude(ctx context.Context) ([]mcpClient, []api.Tool, error) {
+	var mcpClients []mcpClient
+	var toolFuncs []api.Tool
+
+	type mcpServer struct {
+		URL  string `json:"url"`
+		Type string `json:"type"`
+	}
+
+	var claudeConfig struct {
+		McpServers map[string]mcpServer `json:"mcpServers"`
+	}
+
+	// parse the claude.js into a structure
+	configPath := filepath.Join(userHomeDir(), ".claude.json")
+	// First check if the config file exists
+	if _, err := os.Stat(configPath); err != nil {
+		return nil, nil, nil
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	err = json.Unmarshal(data, &claudeConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// TODO query easy mcpServer for functions
+	for _, s := range claudeConfig.McpServers {
+		mcpClientClient := mcp.NewClient(&mcp.Implementation{Name: "ollamacli", Version: version.Version}, nil)
+		var cs *mcp.ClientSession
+		var err error
+		if s.Type == "sse" {
+			cs, err = mcpClientClient.Connect(ctx, mcp.NewSSEClientTransport(s.URL, nil))
+			if err != nil {
+				return nil, nil, err
+			}
+		} else if s.Type == "http" {
+			cs, err = mcpClientClient.Connect(ctx, mcp.NewStreamableClientTransport(s.URL, nil))
+			if err != nil {
+				return nil, nil, err
+			}
+		} else {
+			return nil, nil, fmt.Errorf("mcp server type %s not handled", s.Type)
+		}
+		// Get functions from server
+
+		tools, err := cs.ListTools(ctx, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		mcpC := mcpClient{CS: cs}
+		for _, tool := range tools.Tools {
+			slog.Debug("Adding tool",
+				"tool", tool.Name,
+				"description", tool.Description,
+			)
+			var f api.ToolFunction
+			f.Name = tool.Name
+			f.Description = tool.Description
+			f.Parameters.Required = tool.InputSchema.Required
+			f.Parameters.Properties = make(map[string]api.ToolProperty)
+			for p, v := range tool.InputSchema.Properties {
+				f.Parameters.Properties[p] = api.ToolProperty{
+					Type:        []string{v.Type},
+					Description: v.Description,
+				}
+			}
+
+			toolFuncs = append(toolFuncs, api.Tool{
+				Function: f,
+			})
+			mcpC.Tools = append(mcpC.Tools, tool.Name)
+		}
+		mcpClients = append(mcpClients, mcpC)
+	}
+	// TODO add the functions to toolFuncs
+	// TODO add the client connection to mcpClients
+	return mcpClients, toolFuncs, nil
+}
+
+type modelInfo struct {
+	Name         string
+	Capabilities []string
+}
+
+func getValidModels(ctx context.Context, client *api.Client, imagePaths, toolPaths []string) ([]modelInfo, error) {
 	modelsList, err := client.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var models []string
+	var models []modelInfo
 
 	// Sort models by size, largest on top
 	sort.Slice(modelsList.Models, func(i, j int) bool {
@@ -51,11 +146,6 @@ func getValidModels(ctx context.Context, client *api.Client, imagePaths, toolPat
 	})
 
 	for _, m := range modelsList.Models {
-		// TODO consider tool support
-		if len(imagePaths) == 0 && len(toolPaths) == 0 {
-			models = append(models, m.Name)
-			continue
-		}
 		model, err := client.Show(ctx, &api.ShowRequest{
 			Model: m.Name,
 		})
@@ -68,7 +158,11 @@ func getValidModels(ctx context.Context, client *api.Client, imagePaths, toolPat
 		if len(toolPaths) > 0 && !slices.Contains(model.Capabilities, "tools") {
 			continue
 		}
-		models = append(models, m.Name)
+		m2 := modelInfo{Name: m.Name}
+		for _, c := range model.Capabilities {
+			m2.Capabilities = append(m2.Capabilities, string(c))
+		}
+		models = append(models, m2)
 	}
 	return models, nil
 }
@@ -111,12 +205,16 @@ to quickly create a Cobra application.`,
 			return nil, cobra.ShellCompDirectiveError
 		}
 
-		return models, 0
+		var m []string
+		for _, n := range models {
+			m = append(m, n.Name)
+		}
+		return m, 0
 	})
 	promptCmd.Flags().String("prefix", "", "Required prefix for response")
 	promptCmd.Flags().StringP("system", "s", "", "System prompt")
 	promptCmd.Flags().StringP("template", "t", "", "Template for system and user prompts")
-	promptCmd.Flags().StringSlice("tool", nil, "URL or command for MCP tool")
+	promptCmd.Flags().StringSlice("tool", nil, "URL or command for MCP tool (format http://... for streamable, sse+http://... for SSE)")
 	promptCmd.RegisterFlagCompletionFunc("template", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		var t []string
 
@@ -175,29 +273,41 @@ func Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Figure out which model to use
-	model, err := cmd.Flags().GetString("model")
+	modelName, err := cmd.Flags().GetString("model")
 	if err != nil {
 		return err
 	}
 
-	if model == "" {
-		model = models[0]
-	}
+	var model modelInfo
 
-	if !slices.Contains(models, model) {
-		// Search for the model in the list
+	// If the user didn't specify a model by name, pick the top one
+	if modelName == "" {
+		model = models[0]
+	} else {
 		for _, m := range models {
-			if strings.Contains(m, model) {
+			if modelName == m.Name {
 				model = m
 			}
 		}
-		// If it still doesn't contain an available model, error
-		if !slices.Contains(models, model) {
-			return fmt.Errorf("unable to find model %s", model)
-		}
 	}
 
-	slog.Debug("model", "model", model)
+	// If model is still empty, then error
+
+	if model.Name == "" {
+		return fmt.Errorf("unable to find model %s", modelName)
+	}
+
+	/*
+		TODO this won't trigger because the models are already filtered based on cli arguments
+		if len(imagePaths) > 0 && !slices.Contains(model.Capabilities, "vision") {
+			return fmt.Errorf("model %s doesn't support vision", modelName)
+		}
+		if len(toolPaths) > 0 && !slices.Contains(model.Capabilities, "tools") {
+			return fmt.Errorf("model %s doesn't support tools", modelName)
+		}
+	*/
+
+	slog.Debug("model", "model", model.Name)
 
 	// Start collecting messages for the model
 	var messages []api.Message
@@ -281,19 +391,47 @@ func Run(cmd *cobra.Command, args []string) error {
 	})
 	//}
 
-	// TODO add any tool options to messages
-	type mcpClient struct {
-		CS    *mcp.ClientSession
-		Tools []string
-	}
+	// https://deadprogrammersociety.com/2025/03/calling-mcp-servers-the-hard-way.html
 	var mcpClients []mcpClient
 	var toolFuncs []api.Tool
+
+	// TODO If the model picked supports tools, then add the tools found in $HOME/.claude.json
+	slog.Debug("Model capabilities",
+		"capabilities", model,
+	)
+	if slices.Contains(model.Capabilities, "tools") {
+		slog.Debug("Need to add tools from claude now")
+		mcpC, toolF, err := getToolsFromClaude(cmd.Context())
+		if err != nil {
+			return err
+		}
+		for _, m := range mcpC {
+			mcpClients = append(mcpClients, m)
+		}
+		for _, t := range toolF {
+			toolFuncs = append(toolFuncs, t)
+		}
+	}
+
+	// add any tool options to messages
 	for _, t := range toolPaths {
 		var cs *mcp.ClientSession
-		//determine if the toolpath is a command on the system, or a http(s?) SSE server
-		mcpClientClient := mcp.NewClient(&mcp.Implementation{Name: "mcp-client", Version: "v1.0.0"}, nil)
+		// determine if the toolpath is a command on the system, or a http(s?) SSE server
+		mcpClientClient := mcp.NewClient(&mcp.Implementation{Name: "ollamacli", Version: version.Version}, nil)
+		// If the URL starts with "http" we need to establish a network connection
+		// to the MCP server.  The transport type is chosen dynamically – first
+		// we try a stream‑based transport, and if that fails we fall back to
+		// Server‑Sent Events (SSE).  If both attempts fail we surface the error
+		// to the caller.
 		if strings.HasPrefix(t, "http") {
+			// Attempt to connect using a stream‑able client transport
 			cs, err = mcpClientClient.Connect(cmd.Context(), mcp.NewStreamableClientTransport(t, nil))
+			if err != nil {
+				return err
+			}
+		} else if strings.HasPrefix(t, "sse+") {
+			t, _ = strings.CutPrefix(t, "sse+")
+			cs, err = mcpClientClient.Connect(cmd.Context(), mcp.NewSSEClientTransport(t, nil))
 			if err != nil {
 				return err
 			}
@@ -314,13 +452,16 @@ func Run(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		}
-		mcpC := mcpClient{CS: cs}
 		tools, err := cs.ListTools(cmd.Context(), nil)
 		if err != nil {
 			return err
 		}
+		mcpC := mcpClient{CS: cs}
 		for _, tool := range tools.Tools {
-			// TODO add debug option fmt.Printf("Tool: %s: %#v\n", tool.Name, tool.InputSchema)
+			slog.Debug("Adding tool",
+				"tool", tool.Name,
+				"description", tool.Description,
+			)
 			var f api.ToolFunction
 			f.Name = tool.Name
 			f.Description = tool.Description
@@ -370,6 +511,10 @@ func Run(cmd *cobra.Command, args []string) error {
 				// TODO fmt.Printf("Calling function %s with %#v\n", c.Function.Name, c.Function.Arguments)
 				for _, mcpC := range mcpClients {
 					if slices.Contains(mcpC.Tools, c.Function.Name) {
+						slog.Debug("Calling tool",
+							"tool", c.Function.Name,
+							"args", c.Function.Arguments,
+						)
 						toolRes, err := mcpC.CS.CallTool(cmd.Context(), &mcp.CallToolParams{
 							Name:      c.Function.Name,
 							Arguments: c.Function.Arguments,
@@ -432,7 +577,7 @@ func Run(cmd *cobra.Command, args []string) error {
 	for {
 		// Pick a model and start the ChatRequest object
 		req := &api.ChatRequest{
-			Model:    model,
+			Model:    model.Name,
 			Messages: messages,
 			Tools:    toolFuncs,
 		}

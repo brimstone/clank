@@ -1,4 +1,4 @@
-VERSION := -X github.com/brimstone/ollamacli/version.version=dev-$(shell date +%Y-%m-%dT%H:%M:%S)
+VERSION := -X github.com/brimstone/ollamacli/version.Version=dev-$(shell date +%Y-%m-%dT%H:%M:%S)
 
 .PHONY: all
 all: ollamacli ollamacli.exe
