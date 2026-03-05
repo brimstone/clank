@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Matt Robinson brimstone@the.narro.ws
+
 package list
 
 import (
@@ -20,6 +22,7 @@ This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 		RunE: Run,
 	}
+
 	return listCmd
 }
 
@@ -29,6 +32,7 @@ func Run(cmd *cobra.Command, args []string) error {
 		slog.Error("Unable to create client",
 			"err", err,
 		)
+
 		return err
 	}
 
@@ -36,6 +40,7 @@ func Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
 	for _, m := range models.Models {
 		model, err := client.Show(cmd.Context(), &api.ShowRequest{
 			Model: m.Name,
@@ -44,11 +49,13 @@ func Run(cmd *cobra.Command, args []string) error {
 			slog.Error("error showing models",
 				"err", err,
 			)
+
 			continue
 		}
 		//if slices.Contains(model.Capabilities, "tools") {
 		fmt.Printf("Model: %s %q\n", m.Name, model.Capabilities)
 		//}
 	}
+
 	return nil
 }

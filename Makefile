@@ -19,5 +19,5 @@ pre-commit: clank
 
 .PHONY: release
 release:
-	~/go/bin/goreleaser release --snapshot --clean
+	goreleaser release --snapshot --clean
 

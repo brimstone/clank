@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Matt Robinson brimstone@the.narro.ws
+
 package version
 
 import (
@@ -22,5 +24,6 @@ to quickly create a Cobra application.`,
 			fmt.Println(Version)
 		},
 	}
+
 	return versionCmd
 }

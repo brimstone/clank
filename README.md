@@ -1,6 +1,6 @@
 # clank
 
-A command-line interface (CLI) tool for interacting with models via [Ollama](https://ollama.ai). This application enables users to quickly list available models, prompt models with custom instructions, and manage model interactions through a streamlined command-line experience.
+A command-line interface (CLI) tool for interacting with models via [Ollama](https://ollama.ai).
 
 ---
 
@@ -68,7 +68,7 @@ clank list
 ### Prompt a Model
 
 ```bash
-clank prompt -u "What is the capital of France?"
+clank prompt "What is the capital of France?"
 ```
 
 ### Prompt with System Instructions
@@ -80,7 +80,7 @@ clank prompt -m llama2 -s "You are a helpful assistant" -u "Explain quantum comp
 ### Prompt with Image
 
 ```bash
-clank prompt -m llama2 -i "image1.png" "Describe the content of the image."
+clank prompt -m llama2 -i image1.png "Describe the content of the image."
 ```
 
 ---

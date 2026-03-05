@@ -1,0 +1,1 @@
+- a metadata file in the template directory that specifies a lowercase fuzzy match for which model to prefer

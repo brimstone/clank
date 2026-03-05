@@ -1,10 +1,12 @@
 /*
-Copyright © 2025 NAME HERE <EMAIL ADDRESS>
+Copyright (c) 2026 Matt Robinson brimstone@the.narro.ws
 */
+
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,7 +20,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "clank",
 	Short: "A brief description of your application",
@@ -59,13 +61,14 @@ func main() {
 	ctx := context.Background()
 
 	cmd, _, _ := rootCmd.Find(os.Args[1:])
-	//fmt.Println(cmd.Use, rootCmd.Use)
 	// default cmd if no cmd is given
 	if (len(os.Args) > 1 &&
 		os.Args[1] != "completion" &&
 		os.Args[1] != "__complete") &&
-		cmd.Use == rootCmd.Use && cmd.Flags().Parse(os.Args[1:]) != pflag.ErrHelp {
+		cmd.Use == rootCmd.Use &&
+		!errors.Is(cmd.Flags().Parse(os.Args[1:]), pflag.ErrHelp) {
 		slog.Debug("Defaulting to prompt command")
+
 		args := []string{"prompt"}
 		args = append(args, os.Args[1:]...)
 		rootCmd.SetArgs(args)
