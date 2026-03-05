@@ -8,17 +8,19 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
+	"strings"
 
-	"github.com/brimstone/ollamacli/list"
-	"github.com/brimstone/ollamacli/prompt"
-	"github.com/brimstone/ollamacli/version"
+	"github.com/brimstone/clank/list"
+	"github.com/brimstone/clank/prompt"
+	"github.com/brimstone/clank/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "ollamacli",
+	Use:   "clank",
 	Short: "A brief description of your application",
 	Long: `A longer description that spans multiple lines and likely contains
 examples and usage of using your application. For example:
@@ -37,14 +39,14 @@ func main() {
 	slog.SetDefault(slog.New(h))
 
 	// check for environment variable now
-	if os.Getenv("DEBUG") != "" {
+	if strings.ToLower(os.Getenv("LOG_LEVEL")) == "debug" || slices.Contains(os.Args, "--debug") {
 		programLevel.Set(slog.LevelDebug)
 	}
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.ollamacli.yaml)")
+	rootCmd.PersistentFlags().Bool("debug", false, "debug mode")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.

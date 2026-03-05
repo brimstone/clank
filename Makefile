@@ -1,14 +1,23 @@
-VERSION := -X github.com/brimstone/ollamacli/version.Version=dev-$(shell date +%Y-%m-%dT%H:%M:%S)
-
-.PHONY: all
-all: ollamacli ollamacli.exe
-
-ollamacli: main.go */*.go Makefile
-	go build -v -ldflags "-s -w ${VERSION}"
-
-ollamacli.exe: main.go Makefile
-	GOOS=windows go build -v -ldflags "-s -w ${VERSION}"
+clank: go.* *.go */*.go
+	go build -v
 
 .PHONY: clean
 clean:
-	rm -f ollamacli ollamacli.exe
+	rm -rf dist
+
+.PHONY: lint
+lint: clank
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2 run
+
+.PHONY: lint-fix
+lint-fix: clank
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2 run --fix
+
+.PHONY: pre-commit
+pre-commit: clank
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2 run --disable godox
+
+.PHONY: release
+release:
+	~/go/bin/goreleaser release --snapshot --clean
+

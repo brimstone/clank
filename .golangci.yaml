@@ -1,0 +1,28 @@
+version: "2"
+linters:
+  default: all
+  disable:
+  - bodyclose
+  - cyclop
+  - depguard
+  - err113
+  - exhaustruct
+  - forbidigo
+  - forcetypeassert
+  - funlen
+  - gochecknoglobals
+  - gocognit
+  - gocritic
+  - lll
+  - mnd
+  - nestif
+  - noctx
+  - prealloc
+  - revive
+  - tagliatelle
+  - unparam
+  - varnamelen
+  - wrapcheck
+  settings:
+    goheader:
+      template-path: header.tmpl
