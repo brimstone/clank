@@ -1,3 +1,4 @@
 /clank
 # Added by goreleaser init:
 /dist/
+/release.pem

@@ -15,6 +15,7 @@ import (
 
 	"github.com/brimstone/clank/list"
 	"github.com/brimstone/clank/prompt"
+	"github.com/brimstone/clank/update"
 	"github.com/brimstone/clank/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -57,6 +58,7 @@ func main() {
 	rootCmd.AddCommand(prompt.Cmd())
 	rootCmd.AddCommand(list.Cmd())
 	rootCmd.AddCommand(version.Cmd())
+	rootCmd.AddCommand(update.Cmd())
 
 	ctx := context.Background()
 

@@ -16,14 +16,25 @@ before:
     - go generate ./...
 
 builds:
-  - env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-    ldflags:
-    - -s -w -X version.Version={{.Version}} -X version.Commit={{.Commit}} -X version.Date={{.Date}}
+- env:
+  - CGO_ENABLED=0
+  goos:
+  - linux
+  - windows
+  - darwin
+  ignore:
+  - goos: darwin
+    goarch: 386
+  - goos: windows
+    goarch: 386
+  - goos: linux
+    goarch: 386
+  ldflags:
+  - -s
+  - -w
+  - -X github.com/brimstone/clank/version.Version={{.Version}}
+  - -X github.com/brimstone/clank/version.Commit={{.Commit}}
+  - -X github.com/brimstone/clank/version.Date={{.Date}}
 
 archives:
   - formats: [tar.gz]
@@ -53,3 +64,7 @@ release:
     ---
 
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+signs:
+- artifacts: all
+  cmd: openssl
+  args: ["dgst", "-sha256", "-sign", "release.pem", "-out", "${signature}", "${artifact}"]

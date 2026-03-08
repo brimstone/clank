@@ -1,1 +1,4 @@
 - a metadata file in the template directory that specifies a lowercase fuzzy match for which model to prefer
+- accept a url for images
+- is there a better way to include text files in a prompt, maybe as another user message?
+- config file to hold api keys and providers by name

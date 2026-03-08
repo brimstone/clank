@@ -34,7 +34,10 @@ Use `clank [command] --help` to explore detailed usage and flags for each comman
 
 ### General Flags
 
-- `-h, --help`: Display help information for the current command.
+| Flag | Description |
+|------|-------------|
+| -h, --help | Display help information for the current command. |
+| --debug | Show messages meant for debugging |
 
 ---
 

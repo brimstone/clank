@@ -3,22 +3,16 @@
 package prompt
 
 import (
-	"context"
 	"embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
-	"sort"
 	"strings"
 
-	"github.com/brimstone/clank/version"
 	"github.com/go-andiamo/splitter"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ollama/ollama/api"
@@ -28,20 +22,6 @@ import (
 
 //go:embed all:templates/*
 var templates embed.FS
-
-// Lifted from viper's source.
-func userHomeDir() string {
-	if runtime.GOOS == "windows" {
-		home := os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
-		if home == "" {
-			home = os.Getenv("USERPROFILE")
-		}
-
-		return home
-	}
-
-	return os.Getenv("HOME")
-}
 
 type mcpClient struct {
 	CS    *mcp.ClientSession
@@ -56,284 +36,9 @@ type mcpServer struct {
 	Env     []string `json:"env"`
 }
 
-func setupTool(ctx context.Context, name string, s mcpServer) (mcpClient, []api.Tool, error) {
-	var toolFuncs []api.Tool
-
-	mcpClientClient := mcp.NewClient(&mcp.Implementation{Name: "clank", Version: version.Version}, nil)
-
-	var cs *mcp.ClientSession
-
-	var err error
-
-	switch s.Type {
-	case "sse":
-		cs, err = mcpClientClient.Connect(ctx,
-			&mcp.SSEClientTransport{
-				Endpoint: s.URL,
-			}, nil)
-		if err != nil {
-			slog.Error("Unable to add tool",
-				"name", name,
-				"err", err.Error())
-
-			return mcpClient{}, nil, nil
-		}
-	case "http":
-		cs, err = mcpClientClient.Connect(ctx,
-			&mcp.StreamableClientTransport{
-				Endpoint: s.URL,
-			}, nil)
-		if err != nil {
-			slog.Error("Unable to add tool",
-				"name", name,
-				"err", err.Error())
-
-			return mcpClient{}, nil, nil
-		}
-	case "":
-		cs, err = mcpClientClient.Connect(ctx, &mcp.CommandTransport{
-			Command: exec.CommandContext(ctx, s.Command, s.Args...), //nolint:gosec
-		}, nil)
-		if err != nil {
-			slog.Error("Unable to add tool",
-				"name", name,
-				"err", err.Error())
-
-			return mcpClient{}, nil, nil
-		}
-	default:
-		return mcpClient{}, nil, fmt.Errorf("mcp server type %s not handled", s.Type)
-	}
-	// Get functions from server
-
-	tools, err := cs.ListTools(ctx, nil)
-	if err != nil {
-		slog.Error("ListTools", "err", err.Error())
-
-		return mcpClient{}, nil, err
-	}
-
-	mcpC := mcpClient{CS: cs}
-
-	for _, tool := range tools.Tools {
-		slog.Debug("Adding tool",
-			"tool", tool.Name,
-			"description", tool.Description,
-		)
-
-		var f api.ToolFunction
-		f.Name = tool.Name
-		f.Description = tool.Description
-		f.Parameters.Properties = api.NewToolPropertiesMap()
-		is := tool.InputSchema.(map[string]any)
-
-		for _, r := range is["required"].([]any) {
-			f.Parameters.Required = append(f.Parameters.Required, r.(string))
-		}
-
-		props := is["properties"].(map[string]any)
-		for p, v := range props {
-			vm := v.(map[string]any)
-			f.Parameters.Properties.Set(p, api.ToolProperty{
-				Type:        []string{vm["type"].(string)},
-				Description: vm["description"].(string),
-			})
-		}
-
-		toolFuncs = append(toolFuncs, api.Tool{
-			Function: f,
-		})
-
-		mcpC.Tools = append(mcpC.Tools, tool.Name)
-	}
-
-	return mcpC, toolFuncs, nil
-}
-
-func getToolsFromClaude(ctx context.Context) ([]mcpClient, []api.Tool, error) {
-	var mcpClients []mcpClient
-
-	var toolFuncs []api.Tool
-
-	var claudeConfig struct {
-		McpServers map[string]mcpServer `json:"mcpServers"`
-	}
-
-	// parse the claude.js into a structure
-	configPath := filepath.Join(userHomeDir(), ".claude.json")
-	// First check if the config file exists
-	if _, err := os.Stat(configPath); err != nil {
-		slog.Debug(".claude.json not found")
-
-		return nil, nil, nil //nolint:nilerr
-	}
-
-	data, err := os.ReadFile(configPath) //nolint:gosec
-	if err != nil {
-		return nil, nil, err
-	}
-
-	err = json.Unmarshal(data, &claudeConfig)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Query mcpServer for functions
-	for name, s := range claudeConfig.McpServers {
-		mcpClient, toolFunc, err := setupTool(ctx, name, s)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		mcpClients = append(mcpClients, mcpClient)
-		toolFuncs = append(toolFuncs, toolFunc...)
-	}
-
-	return mcpClients, toolFuncs, nil
-}
-
 type modelInfo struct {
 	Name         string
 	Capabilities []string
-}
-
-func getValidModels(ctx context.Context, client *api.Client, imagePaths, toolPaths []string) ([]modelInfo, error) {
-	modelsList, err := client.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var models []modelInfo
-
-	// Sort models by size, largest on top
-	sort.Slice(modelsList.Models, func(i, j int) bool {
-		return modelsList.Models[i].Size > modelsList.Models[j].Size
-	})
-
-	for _, m := range modelsList.Models {
-		model, err := client.Show(ctx, &api.ShowRequest{
-			Model: m.Name,
-		})
-		if err != nil {
-			return nil, errors.New("error showing models")
-		}
-
-		if len(imagePaths) > 0 && !slices.Contains(model.Capabilities, "vision") {
-			continue
-		}
-
-		if len(toolPaths) > 0 && !slices.Contains(model.Capabilities, "tools") {
-			continue
-		}
-
-		m2 := modelInfo{Name: m.Name}
-		for _, c := range model.Capabilities {
-			m2.Capabilities = append(m2.Capabilities, string(c))
-		}
-
-		models = append(models, m2)
-	}
-
-	return models, nil
-}
-
-func Cmd() *cobra.Command {
-	var promptCmd = &cobra.Command{
-		Use:   "prompt",
-		Short: "Prompt a model",
-		Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-		RunE: Run,
-	}
-
-	promptCmd.Flags().StringP("model", "m", "", "Model to use")
-	promptCmd.Flags().StringP("user", "u", "", "User prompt")
-
-	err := promptCmd.RegisterFlagCompletionFunc("model", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-		client, err := api.ClientFromEnvironment()
-		if err != nil {
-			slog.Error("Unable to create client",
-				"err", err,
-			)
-
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		imagePaths, err := cmd.Flags().GetStringSlice("image")
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		toolPaths, err := cmd.Flags().GetStringSlice("tool")
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		models, err := getValidModels(cmd.Context(), client, imagePaths, toolPaths)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		var m []string
-		for _, n := range models {
-			m = append(m, n.Name)
-		}
-
-		return m, 0
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	promptCmd.Flags().String("prefix", "", "Required prefix for response")
-	promptCmd.Flags().StringP("system", "s", "", "System prompt")
-	promptCmd.Flags().StringP("template", "t", "", "Template for system and user prompts")
-	promptCmd.Flags().StringSlice("tool", nil, "URL or command for MCP tool (format http://... for streamable, sse+http://... for SSE)")
-
-	err = promptCmd.RegisterFlagCompletionFunc("template", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-		var t []string
-
-		// Check files on disk
-		files, err := os.ReadDir(filepath.Join(userHomeDir(), ".clank", "templates"))
-		if err == nil {
-			for _, f := range files {
-				if f.IsDir() {
-					// Check if system.md exists in this directory
-					systemMdPath := filepath.Join(userHomeDir(), ".clank", "templates", f.Name(), "system.md")
-					if _, err := os.Stat(systemMdPath); err == nil {
-						t = append(t, f.Name())
-					}
-				}
-			}
-		}
-
-		files, err = templates.ReadDir("templates")
-		if err != nil {
-			slog.Error("Unable to read internal templates",
-				"err", err,
-			)
-
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		for _, f := range files {
-			t = append(t, f.Name())
-		}
-
-		return t, 0
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	promptCmd.Flags().StringSliceP("image", "i", nil, "Images to include in the user prompt")
-	promptCmd.Flags().Bool("unload", false, "Unload the model immediately after generation")
-
-	return promptCmd
 }
 
 func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
@@ -463,7 +168,7 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 			userPrompt += "\n"
 		}
 
-		if args[1] != "" {
+		if args[0] != "" {
 			_, err := os.Stat(userPrompt)
 			if err == nil {
 				b, err := os.ReadFile(userPrompt) //nolint:gosec
@@ -639,8 +344,7 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 					return errors.New("response failed to include required prefix")
 				}
 			}
-			// If it's not a standard terminal, don't worry about it
-		} else {
+		} else { // If it's not a standard terminal, don't worry about it
 			if resp.Message.Content == "</think>" {
 				thinking = false
 			}
