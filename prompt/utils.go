@@ -68,6 +68,15 @@ func setupTool(ctx context.Context, name string, s mcpServer) (mcpClient, []api.
 
 			return mcpClient{}, nil, nil
 		}
+	case "memory":
+		cs, err = mcpClientClient.Connect(ctx, s.Transport, nil)
+		if err != nil {
+			slog.Error("Unable to add tool",
+				"name", name,
+				"err", err.Error())
+
+			return mcpClient{}, nil, nil
+		}
 	case "":
 		cs, err = mcpClientClient.Connect(ctx, &mcp.CommandTransport{
 			Command: exec.CommandContext(ctx, s.Command, s.Args...), //nolint:gosec

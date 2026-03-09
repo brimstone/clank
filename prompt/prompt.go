@@ -29,11 +29,12 @@ type mcpClient struct {
 }
 
 type mcpServer struct {
-	URL     string   `json:"url"`
-	Type    string   `json:"type"`
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
-	Env     []string `json:"env"`
+	URL       string                 `json:"url"`
+	Type      string                 `json:"type"`
+	Command   string                 `json:"command"`
+	Args      []string               `json:"args"`
+	Env       []string               `json:"env"`
+	Transport *mcp.InMemoryTransport `json:"transport"` // for memory transports
 }
 
 type modelInfo struct {
@@ -239,33 +240,47 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 		mcpClients = append(mcpClients, mcpC...)
 
 		toolFuncs = append(toolFuncs, toolF...)
-	}
 
-	// add any tool options to messages
-	for _, t := range toolPaths {
-		s := mcpServer{}
-		if strings.HasPrefix(t, "http") {
-			s.Type = "http"
-			s.URL = t
-		} else if strings.HasPrefix(t, "sse+") {
-			s.Type = "sse"
-			s.URL = t
-		} else {
-			spaceSplitter, err := splitter.NewSplitter(' ', splitter.DoubleQuotes)
+		// add any tool options to messages
+		for _, t := range toolPaths {
+			s := mcpServer{}
+			if strings.HasPrefix(t, "http") {
+				s.Type = "http"
+				s.URL = t
+			} else if strings.HasPrefix(t, "sse+") {
+				s.Type = "sse"
+				s.URL = t
+			} else {
+				spaceSplitter, err := splitter.NewSplitter(' ', splitter.DoubleQuotes)
+				if err != nil {
+					return err
+				}
+
+				toolCmd, err := spaceSplitter.Split(t)
+				if err != nil {
+					return err
+				}
+
+				s.Command = toolCmd[0]
+				s.Args = toolCmd[1:]
+			}
+
+			mcpClient, toolFunc, err := setupTool(cmd.Context(), "", s)
 			if err != nil {
 				return err
 			}
 
-			toolCmd, err := spaceSplitter.Split(t)
-			if err != nil {
-				return err
-			}
-
-			s.Command = toolCmd[0]
-			s.Args = toolCmd[1:]
+			mcpClients = append(mcpClients, mcpClient)
+			toolFuncs = append(toolFuncs, toolFunc...)
 		}
 
-		mcpClient, toolFunc, err := setupTool(cmd.Context(), "", s)
+		// Internal tools
+		s := mcpServer{
+			Type:      "memory",
+			Transport: toolGetDate(cmd.Context()),
+		}
+
+		mcpClient, toolFunc, err := setupTool(cmd.Context(), "get_date", s)
 		if err != nil {
 			return err
 		}
@@ -320,6 +335,9 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 						for _, content := range toolRes.Content {
 							switch tc := content.(type) {
 							case *mcp.TextContent:
+								slog.Debug("Tool response",
+									"response", tc.Text)
+
 								messages = append(messages, api.Message{
 									Role:    "tool",
 									Content: tc.Text,
@@ -376,10 +394,19 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 	for {
 		// debug messages going to the model
 		for _, m := range messages {
-			slog.Debug("message",
-				"role", m.Role,
-				"content", m.Content,
-			)
+			if m.Role == "tool" {
+				for _, f := range m.ToolCalls {
+					slog.Debug("message",
+						"role", m.Role,
+						"tool", f.Function.Name,
+					)
+				}
+			} else {
+				slog.Debug("message",
+					"role", m.Role,
+					"content", m.Content,
+				)
+			}
 		}
 		// Pick a model and start the ChatRequest object
 		req := &api.ChatRequest{
