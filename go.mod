@@ -6,7 +6,7 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/go-andiamo/splitter v1.2.5
 	github.com/ijt/go-anytime v1.9.2
-	github.com/modelcontextprotocol/go-sdk v1.4.0
+	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/ollama/ollama v0.17.7
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/spf13/cobra v1.10.2
@@ -28,7 +28,7 @@ require (
 	github.com/mailru/easyjson v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.8.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
-	github.com/segmentio/encoding v0.5.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.14 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
