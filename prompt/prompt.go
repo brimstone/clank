@@ -329,6 +329,10 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 							Arguments: c.Function.Arguments,
 						})
 						if err != nil {
+							slog.Error("Error calling tool",
+								"tool", c.Function.Name,
+								"err", err,
+							)
 							return err
 						}
 

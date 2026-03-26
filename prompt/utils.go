@@ -114,17 +114,32 @@ func setupTool(ctx context.Context, name string, s mcpServer) (mcpClient, []api.
 		f.Parameters.Properties = api.NewToolPropertiesMap()
 		is := tool.InputSchema.(map[string]any)
 
-		for _, r := range is["required"].([]any) {
-			f.Parameters.Required = append(f.Parameters.Required, r.(string))
+		required, ok := is["required"]
+		if ok {
+			for _, r := range required.([]any) {
+				f.Parameters.Required = append(f.Parameters.Required, r.(string))
+			}
 		}
 
-		props := is["properties"].(map[string]any)
-		for p, v := range props {
-			vm := v.(map[string]any)
-			f.Parameters.Properties.Set(p, api.ToolProperty{
-				Type:        []string{vm["type"].(string)},
-				Description: vm["description"].(string),
-			})
+		props, ok := is["properties"].(map[string]any)
+		if ok {
+			for p, v := range props {
+				vm := v.(map[string]any)
+
+				var toolprops api.ToolProperty
+				switch t := vm["type"].(type) {
+				case string:
+					toolprops.Type = []string{t}
+				case []string:
+					toolprops.Type = t
+				}
+
+				description, ok := vm["description"]
+				if ok {
+					toolprops.Description = description.(string)
+				}
+				f.Parameters.Properties.Set(p, toolprops)
+			}
 		}
 
 		toolFuncs = append(toolFuncs, api.Tool{
