@@ -30,9 +30,7 @@ func Cmd() *cobra.Command {
 				if err == nil {
 					fmt.Printf("Ollama version: %#v\n", version)
 				}
-
 			}
-
 		},
 	}
 

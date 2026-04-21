@@ -243,7 +243,7 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 		}
 
 		if strings.HasPrefix(p, "http") {
-			resp, err := http.Get(p)
+			resp, err := http.Get(p) //nolint:gosec
 			if err != nil {
 				return err
 			}
