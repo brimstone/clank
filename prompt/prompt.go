@@ -333,6 +333,7 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 								"tool", c.Function.Name,
 								"err", err,
 							)
+
 							return err
 						}
 

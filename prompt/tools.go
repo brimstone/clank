@@ -16,14 +16,15 @@ func toolGetDate(ctx context.Context) *mcp.InMemoryTransport {
 	go func(ctx context.Context) {
 		server := mcp.NewServer(&mcp.Implementation{Name: "today"}, nil)
 
-		type args struct {
-			Relative string `json:"relative" jsonschema:"date relative to today"`
-		}
-
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "get_date",
 			Description: "Get today, tomorrow, or yesterday's date",
-		}, func(ctx context.Context, req *mcp.CallToolRequest, args args) (*mcp.CallToolResult, any, error) {
+		}, func(ctx context.Context,
+			req *mcp.CallToolRequest,
+			args struct {
+				Relative string `json:"relative" jsonschema:"date relative to today"`
+			},
+		) (*mcp.CallToolResult, any, error) {
 			targetDate, err := anytime.Parse(args.Relative, time.Now())
 			if err != nil {
 				slog.Error("Error parsing date", "relative", args.Relative, "err", err)

@@ -138,6 +138,7 @@ func setupTool(ctx context.Context, name string, s mcpServer) (mcpClient, []api.
 				if ok {
 					toolprops.Description = description.(string)
 				}
+
 				f.Parameters.Properties.Set(p, toolprops)
 			}
 		}

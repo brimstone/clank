@@ -4,6 +4,7 @@ package list
 
 import (
 	"fmt"
+
 	"log/slog"
 
 	"github.com/ollama/ollama/api"
