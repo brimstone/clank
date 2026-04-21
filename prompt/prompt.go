@@ -74,6 +74,11 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 		return err
 	}
 
+	responseFormat, err := cmd.Flags().GetString("format")
+	if err != nil {
+		return err
+	}
+
 	var model modelInfo
 
 	// If the user didn't specify a model by name, pick the top one
@@ -418,6 +423,10 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 			Model:    model.Name,
 			Messages: messages,
 			Tools:    toolFuncs,
+		}
+
+		if responseFormat != "" {
+			req.Format = []byte("\"" + responseFormat + "\"")
 		}
 
 		if unload {

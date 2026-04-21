@@ -101,6 +101,7 @@ func Cmd() *cobra.Command {
 
 	promptCmd.Flags().StringSliceP("image", "i", nil, "Images to include in the user prompt")
 	promptCmd.Flags().Bool("unload", false, "Unload the model immediately after generation")
+	promptCmd.Flags().StringP("format", "", "", "Response Format, usually \"json\"")
 
 	return promptCmd
 }
