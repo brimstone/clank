@@ -3,16 +3,21 @@
 package prompt
 
 import (
+	"bytes"
 	"embed"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/anthonynsimon/bild/imgio"
+	"github.com/anthonynsimon/bild/transform"
 	"github.com/go-andiamo/splitter"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ollama/ollama/api"
@@ -206,14 +211,59 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 	var images []api.ImageData
 
 	for _, p := range imagePaths {
-		var d api.ImageData
+		_, err := os.Stat(p)
+		if err == nil {
+			d, err := imgio.Open(p)
+			if err != nil {
+				return err
+			}
 
-		d, err := os.ReadFile(p) //nolint:gosec
-		if err != nil {
-			return err
+			fmt.Printf("%#v\n", d.Bounds())
+			// Resize the image to ensure both dimensions are <= 512
+			originalWidth := d.Bounds().Dx()
+			originalHeight := d.Bounds().Dy()
+			maxDimension := 512
+
+			scale := float64(maxDimension) / math.Max(float64(originalWidth), float64(originalHeight))
+			newWidth := int(float64(originalWidth) * scale)
+			newHeight := int(float64(originalHeight) * scale)
+			resizedImg := transform.Resize(d, newWidth, newHeight, transform.Linear)
+
+			var imgBytes []byte
+
+			var imgBuffer = bytes.NewBuffer(imgBytes)
+
+			err = imgio.PNGEncoder()(imgBuffer, resizedImg)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("PNG: %#v\n", imgBuffer.Len())
+			images = append(images, imgBuffer.Bytes())
 		}
 
-		images = append(images, d)
+		if strings.HasPrefix(p, "http") {
+			resp, err := http.Get(p)
+			if err != nil {
+				return err
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				return errors.New("error fetching image")
+			}
+
+			d, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+
+			err = resp.Body.Close()
+			if err != nil {
+				return err
+			}
+
+			images = append(images, d)
+		}
 	}
 
 	//if userPrompt != "" {
