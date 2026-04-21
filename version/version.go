@@ -5,14 +5,15 @@ package version
 import (
 	"fmt"
 
+	"github.com/ollama/ollama/api"
 	"github.com/spf13/cobra"
 )
 
 var (
-	Version string = "dev"
-	Commit  string = "main"
-	Date    string = ""
-	Binary  string = "clank"
+	Version = "dev"
+	Commit  = "main"
+	Date    = "???"
+	Binary  = "clank"
 )
 
 func Cmd() *cobra.Command {
@@ -22,6 +23,16 @@ func Cmd() *cobra.Command {
 		Long:  `Display the version of clank`,
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("%s %s built on %s\n", Binary, Version, Date)
+
+			client, err := api.ClientFromEnvironment()
+			if err == nil {
+				version, err := client.Version(cmd.Context())
+				if err == nil {
+					fmt.Printf("Ollama version: %#v\n", version)
+				}
+
+			}
+
 		},
 	}
 
