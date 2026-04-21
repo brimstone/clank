@@ -2,3 +2,4 @@
 - accept a url for images
 - is there a better way to include text files in a prompt, maybe as another user message?
 - config file to hold api keys and providers by name
+- template subcommand to mange templates
