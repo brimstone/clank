@@ -4,8 +4,12 @@ package utils
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os/exec"
 	"strings"
 
@@ -14,6 +18,56 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ollama/ollama/api"
 )
+
+type slogWriter struct{}
+
+func (slogWriter) Write(p []byte) (int, error) {
+	slog.Debug(string(p))
+
+	return len(p), nil
+}
+
+// warnOnUntrustedCert returns a TLS VerifyPeerCertificate hook that verifies
+// the server certificate against the system root pool and logs a warning when
+// it is untrusted. It never fails the handshake; InsecureSkipVerify is set
+// separately so any certificate is accepted.
+func warnOnUntrustedCert(host string) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			return nil
+		}
+
+		leaf, err := x509.ParseCertificate(rawCerts[0])
+		if err != nil {
+			slog.Warn("Unable to parse server certificate",
+				"endpoint", host,
+				"err", err.Error(),
+			)
+
+			return nil
+		}
+
+		intermediates := x509.NewCertPool()
+
+		for _, raw := range rawCerts[1:] {
+			if cert, err := x509.ParseCertificate(raw); err == nil {
+				intermediates.AddCert(cert)
+			}
+		}
+
+		if _, err := leaf.Verify(x509.VerifyOptions{
+			Intermediates: intermediates,
+			DNSName:       host,
+		}); err != nil {
+			slog.Warn("Server certificate is not trusted by system certificate pool (accepting anyway)",
+				"endpoint", host,
+				"err", err.Error(),
+			)
+		}
+
+		return nil
+	}
+}
 
 type MCPClient struct {
 	CS    *mcp.ClientSession
@@ -51,14 +105,40 @@ func SetupTool(ctx context.Context, name string, s MCPServer) (MCPClient, []api.
 
 	var transport mcp.Transport
 
+	var httpClient *http.Client
+
+	if strings.HasPrefix(s.URL, "https://") {
+		endpoint, err := url.Parse(s.URL)
+		if err != nil {
+			return MCPClient{}, nil, err
+		}
+
+		host := endpoint.Hostname()
+
+		if host == "" {
+			host = "localhost"
+		}
+
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify:    true, //nolint:gosec
+					VerifyPeerCertificate: warnOnUntrustedCert(host),
+				},
+			},
+		}
+	}
+
 	switch s.Type {
 	case "sse":
 		transport = &mcp.SSEClientTransport{
-			Endpoint: s.URL,
+			Endpoint:   s.URL,
+			HTTPClient: httpClient,
 		}
 	case "http":
 		transport = &mcp.StreamableClientTransport{
-			Endpoint: s.URL,
+			Endpoint:   s.URL,
+			HTTPClient: httpClient,
 		}
 	case "memory":
 		transport = s.Transport
@@ -79,7 +159,7 @@ func SetupTool(ctx context.Context, name string, s MCPServer) (MCPClient, []api.
 			"name", name,
 			"err", err.Error())
 
-		return MCPClient{}, nil, nil
+		return MCPClient{}, nil, err
 	}
 
 	// Get functions from server

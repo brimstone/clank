@@ -14,8 +14,8 @@ import (
 	"strings"
 
 	"github.com/brimstone/clank/list"
+	"github.com/brimstone/clank/mcp"
 	"github.com/brimstone/clank/prompt"
-	"github.com/brimstone/clank/tool"
 	"github.com/brimstone/clank/update"
 	"github.com/brimstone/clank/version"
 	"github.com/spf13/cobra"
@@ -58,7 +58,7 @@ func main() {
 
 	rootCmd.AddCommand(list.Cmd())
 	rootCmd.AddCommand(prompt.Cmd())
-	rootCmd.AddCommand(tool.Cmd())
+	rootCmd.AddCommand(mcp.Cmd())
 	rootCmd.AddCommand(update.Cmd())
 	rootCmd.AddCommand(version.Cmd())
 

@@ -25,6 +25,7 @@ Use `clank [command] --help` to explore detailed usage and flags for each comman
 - **completion**: Generate autocompletion scripts for supported shells (e.g., bash, zsh).
 - **help**: Display help information for any command.
 - **list**: List all models available for prompting.
+- **mcp**: Interact with MCP servers directly (list functions or call them).
 - **prompt**: Prompt a model with user-defined instructions and parameters.
 - **version**: Display the current version of the tool.
 
@@ -60,6 +61,33 @@ clank prompt [flags]
 
 ---
 
+## MCP Command
+
+The `mcp` command lets you interact with an MCP server directly, without prompting a model. Both the base `mcp` command and `mcp function` accept the `--tool` flag, which takes either an `http://...` URL (streamable transport), an `sse+http://...` URL (SSE transport), or a command line that launches a stdio MCP server.
+
+### List MCP Server Functions
+
+```bash
+clank mcp --tool "$SERVER"
+```
+
+### Call an MCP Server Function
+
+```bash
+clank mcp function FUNCTION [key=value ...] --tool "$SERVER"
+```
+
+The first positional argument is the name of the function to call. Each following positional argument is passed to the function as a `key=value` pair.
+
+The response is pretty-printed by default. Add `--raw` to print it as a single line instead, for use when piping the output to other commands.
+
+```bash
+clank mcp function FUNCTION [key=value ...] --tool "$SERVER"
+clank mcp function FUNCTION [key=value ...] --tool "$SERVER" --raw
+```
+
+---
+
 ## Examples
 
 ### List Available Models
@@ -84,6 +112,18 @@ clank prompt -m llama2 -s "You are a helpful assistant" -u "Explain quantum comp
 
 ```bash
 clank prompt -m llama2 -i image1.png "Describe the content of the image."
+```
+
+### List an MCP Server's Functions
+
+```bash
+clank mcp --tool http://127.0.0.1:8080/mcp
+```
+
+### Call an MCP Server Function
+
+```bash
+clank mcp function add a=2 b=3 --tool http://127.0.0.1:8080/mcp
 ```
 
 ---
