@@ -15,6 +15,7 @@ import (
 
 	"github.com/brimstone/clank/list"
 	"github.com/brimstone/clank/prompt"
+	"github.com/brimstone/clank/tool"
 	"github.com/brimstone/clank/update"
 	"github.com/brimstone/clank/version"
 	"github.com/spf13/cobra"
@@ -55,10 +56,11 @@ func main() {
 	// when this action is called directly.
 	//rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
-	rootCmd.AddCommand(prompt.Cmd())
 	rootCmd.AddCommand(list.Cmd())
-	rootCmd.AddCommand(version.Cmd())
+	rootCmd.AddCommand(prompt.Cmd())
+	rootCmd.AddCommand(tool.Cmd())
 	rootCmd.AddCommand(update.Cmd())
+	rootCmd.AddCommand(version.Cmd())
 
 	ctx := context.Background()
 

@@ -18,7 +18,7 @@ import (
 
 	"github.com/anthonynsimon/bild/imgio"
 	"github.com/anthonynsimon/bild/transform"
-	"github.com/go-andiamo/splitter"
+	"github.com/brimstone/clank/utils"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ollama/ollama/api"
 	"github.com/spf13/cobra"
@@ -27,20 +27,6 @@ import (
 
 //go:embed all:templates/*
 var templates embed.FS
-
-type mcpClient struct {
-	CS    *mcp.ClientSession
-	Tools []string
-}
-
-type mcpServer struct {
-	URL       string                 `json:"url"`
-	Type      string                 `json:"type"`
-	Command   string                 `json:"command"`
-	Args      []string               `json:"args"`
-	Env       []string               `json:"env"`
-	Transport *mcp.InMemoryTransport `json:"transport"` // for memory transports
-}
 
 type modelInfo struct {
 	Name         string
@@ -218,7 +204,7 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 				return err
 			}
 
-			fmt.Printf("%#v\n", d.Bounds())
+			//fmt.Printf("%#v\n", d.Bounds())
 			// Resize the image to ensure both dimensions are <= 512
 			originalWidth := d.Bounds().Dx()
 			originalHeight := d.Bounds().Dy()
@@ -238,7 +224,7 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 				return err
 			}
 
-			fmt.Printf("PNG: %#v\n", imgBuffer.Len())
+			//fmt.Printf("PNG: %#v\n", imgBuffer.Len())
 			images = append(images, imgBuffer.Bytes())
 		}
 
@@ -275,7 +261,7 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 	//}
 
 	// https://deadprogrammersociety.com/2025/03/calling-mcp-servers-the-hard-way.html
-	var mcpClients []mcpClient
+	var mcpClients []utils.MCPClient
 
 	var toolFuncs []api.Tool
 
@@ -298,44 +284,22 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 
 		// add any tool options to messages
 		for _, t := range toolPaths {
-			s := mcpServer{}
-			if strings.HasPrefix(t, "http") {
-				s.Type = "http"
-				s.URL = t
-			} else if strings.HasPrefix(t, "sse+") {
-				s.Type = "sse"
-				s.URL = t
-			} else {
-				spaceSplitter, err := splitter.NewSplitter(' ', splitter.DoubleQuotes)
-				if err != nil {
-					return err
-				}
-
-				toolCmd, err := spaceSplitter.Split(t)
-				if err != nil {
-					return err
-				}
-
-				s.Command = toolCmd[0]
-				s.Args = toolCmd[1:]
-			}
-
-			mcpClient, toolFunc, err := setupTool(cmd.Context(), "", s)
+			mcpC, toolF, err := utils.GetToolsFromPath(cmd.Context(), t)
 			if err != nil {
 				return err
 			}
 
-			mcpClients = append(mcpClients, mcpClient)
-			toolFuncs = append(toolFuncs, toolFunc...)
+			mcpClients = append(mcpClients, mcpC)
+			toolFuncs = append(toolFuncs, toolF...)
 		}
 
 		// Internal tools
-		s := mcpServer{
+		s := utils.MCPServer{
 			Type:      "memory",
 			Transport: toolGetDate(cmd.Context()),
 		}
 
-		mcpClient, toolFunc, err := setupTool(cmd.Context(), "get_date", s)
+		mcpClient, toolFunc, err := utils.SetupTool(cmd.Context(), "get_date", s)
 		if err != nil {
 			return err
 		}
