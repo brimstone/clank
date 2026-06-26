@@ -8,7 +8,7 @@ require (
 	github.com/go-andiamo/splitter v1.2.5
 	github.com/ijt/go-anytime v1.9.2
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/ollama/ollama v0.30.8
+	github.com/ollama/ollama v0.30.11
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
