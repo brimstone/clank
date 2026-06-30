@@ -3,7 +3,7 @@ module github.com/brimstone/clank
 go 1.26.0
 
 require (
-	github.com/anthonynsimon/bild v0.15.0
+	github.com/anthonynsimon/bild v0.16.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/go-andiamo/splitter v1.2.5
 	github.com/ijt/go-anytime v1.9.2
@@ -16,6 +16,7 @@ require (
 )
 
 require (
+	github.com/HugoSmits86/nativewebp v1.3.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/google/go-github/v30 v30.1.0 // indirect
