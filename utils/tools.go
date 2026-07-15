@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -73,7 +72,8 @@ func SetupTool(ctx context.Context, name string, s MCPServer) (MCPClient, []api.
 	}
 
 	// FIXME account for not debugging
-	cs, err = mcpClientClient.Connect(ctx, &mcp.LoggingTransport{Transport: transport, Writer: os.Stderr}, nil)
+	//transport = &mcp.LoggingTransport{Transport: transport, Writer: os.Stderr}
+	cs, err = mcpClientClient.Connect(ctx, transport, nil)
 	if err != nil {
 		slog.Error("Unable to add tool",
 			"name", name,
