@@ -1,7 +1,7 @@
 github.com/HugoSmits86/nativewebp v1.3.0 h1:n1egtEzSV4KwFtealr7dzdYq1wI/uj/bOQ/QcTcIyVE=
 github.com/HugoSmits86/nativewebp v1.3.0/go.mod h1:YNQuWenlVmSUUASVNhTDwf4d7FwYQGbGhklC8p72Vr8=
-github.com/anthonynsimon/bild v0.16.1 h1:ECqtLkQ15kqfHdRtzUfNvQniJtHNpzdVU/7feMYAm0o=
-github.com/anthonynsimon/bild v0.16.1/go.mod h1:hYAxurnswTQ9dexoiK922MepdXLC1lBzG35n6ypk//g=
+github.com/anthonynsimon/bild v0.17.0 h1:kmPJOZpUgvrM2uoS7KMesbDU5+QTvZ92zIBjHM/oa18=
+github.com/anthonynsimon/bild v0.17.0/go.mod h1:ULwssBwK+8dLFObGrI3fIydKYQ2l454Y0eo+mqPclto=
 github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
 github.com/bahlo/generic-list-go v0.2.0/go.mod h1:2KvAjgMlE5NNynlg/5iLrrCCZ2+5xWbdbCW3pNTGyYg=
 github.com/blang/semver v3.5.1+incompatible h1:cQNTCjp13qL8KC3Nbxr/y2Bqb63oX6wdnnjpJbkM4JQ=

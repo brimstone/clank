@@ -3,7 +3,7 @@ module github.com/brimstone/clank
 go 1.26.0
 
 require (
-	github.com/anthonynsimon/bild v0.16.1
+	github.com/anthonynsimon/bild v0.17.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/go-andiamo/splitter v1.2.5
 	github.com/ijt/go-anytime v1.9.2
