@@ -21,6 +21,7 @@ func Cmd() *cobra.Command {
 
 	promptCmd.Flags().StringP("model", "m", "", "Model to use")
 	promptCmd.Flags().StringP("user", "u", "", "User prompt")
+	promptCmd.Flags().String("db", "", "Vector db file (or directory to index in memory) to search for context prepended to the user prompt")
 
 	err := promptCmd.RegisterFlagCompletionFunc("model", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		client, err := api.ClientFromEnvironment()

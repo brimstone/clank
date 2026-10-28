@@ -5,6 +5,8 @@ go 1.26.10
 require (
 	github.com/anthonynsimon/bild v0.17.1
 	github.com/blang/semver v3.5.1+incompatible
+	github.com/brimstone/go-embedding v0.0.0-20261028210641-3420b8800363
+	github.com/brimstone/go-vector v0.0.0-20261028211950-1efb7c77eb13
 	github.com/go-andiamo/splitter v1.2.5
 	github.com/ijt/go-anytime v1.9.2
 	github.com/modelcontextprotocol/go-sdk v1.8.0

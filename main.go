@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/brimstone/clank/db"
 	"github.com/brimstone/clank/list"
 	"github.com/brimstone/clank/mcp"
 	"github.com/brimstone/clank/prompt"
@@ -57,6 +58,7 @@ func main() {
 	//rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
 	rootCmd.AddCommand(list.Cmd())
+	rootCmd.AddCommand(db.Cmd())
 	rootCmd.AddCommand(prompt.Cmd())
 	rootCmd.AddCommand(mcp.Cmd())
 	rootCmd.AddCommand(update.Cmd())

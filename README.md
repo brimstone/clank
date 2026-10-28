@@ -23,6 +23,7 @@ Use `clank [command] --help` to explore detailed usage and flags for each comman
 ## Available Commands
 
 - **completion**: Generate autocompletion scripts for supported shells (e.g., bash, zsh).
+- **db**: Manage a single-file vector database of text documents (init, load, query, stats).
 - **help**: Display help information for any command.
 - **list**: List all models available for prompting.
 - **mcp**: Interact with MCP servers directly (list functions or call them).
@@ -50,6 +51,7 @@ clank prompt [flags]
 
 | Flag | Description |
 |------|-------------|
+| `--db` | Vector db file (or directory to index in memory) to search for context prepended to the user prompt. |
 | `-i, --image` | Images to include in the user prompt (accepts multiple values). |
 | `-m, --model` | Model to use for prompting. |
 | `--prefix` | Required prefix for the model's response. |
@@ -88,6 +90,70 @@ clank mcp function FUNCTION [key=value ...] --tool "$SERVER" --raw
 
 ---
 
+## DB Command
+
+The `db` command manages a single-file vector database of text documents. The database stores embeddings of the text files under a directory, so you can search by meaning rather than exact words. It runs entirely offline: no network or model server is needed.
+
+The fastest path skips the database file entirely: `clank db query ~/notes "..."` searches a directory of text documents on the fly, in memory. For results that persist between runs, `load` indexes a directory into a single-file database (created automatically if it does not exist), and `query` searches it.
+
+### Init a Database
+
+```bash
+clank db init docs.vdb
+clank db init docs.vdb --model hash --dims 512
+```
+
+The `--model` flag names the embedding function and is stored in the file:
+
+- `glove` (default) matches text by meaning, using bundled GloVe word vectors (300 dimensions).
+- `hash` matches by shared words and letter patterns; `--dims` sets its vector dimension.
+
+Because the model is stored in the file, `query` and `stats` read it back; `load` takes `--model` and `--dims` only to create a missing database.
+
+### Load a Directory
+
+```bash
+clank db load docs.vdb ~/notes
+```
+
+If `docs.vdb` does not exist, `load` creates it first with the `glove` model, so `init` is optional. `--model` and `--dims` name the embedding model of a database being created; an existing database keeps the model stored in it.
+
+Every regular file under the directory is read, split into chunks of about `--chunk-size` characters (neighbouring chunks share `--overlap` characters), embedded and stored with its path and byte offsets. Files that contain binary data, are empty, or are larger than `--max-size` bytes are skipped.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | glove | Embedding model used when the database is created: glove (meaning) or hash (lexical). |
+| `--dims` | 512 | Vector dimension for the hash model when the database is created. |
+| `--chunk-size` | 512 | Chunk size in characters. |
+| `--overlap` | 64 | Characters shared between neighbouring chunks. |
+| `--ext` | all text files | File extension to index, e.g. `.md` (repeatable). |
+| `--hidden` | off | Include hidden files and directories. |
+| `--max-size` | 10 MiB | Skip files larger than this many bytes. |
+| `--save-every` | 100 | Save the database every N files. |
+
+Loading a document again replaces its previous chunks, so re-running `load` after editing a file keeps the database current.
+
+### Query the Database
+
+```bash
+clank db query docs.vdb "how does retrieval work"
+clank db query ~/notes "how does retrieval work"
+```
+
+TARGET is either a database file or a directory. A directory is searched without a database file: the text documents under it are indexed on the fly into a memory-only database, so init and load happen automatically and nothing is written to disk.
+
+Prints the `--k` best matches (default 5) with their similarity, source file, chunk number and byte offsets.
+
+### Show Statistics
+
+```bash
+clank db stats docs.vdb
+```
+
+Shows the file size, the stored model, the document and chunk counts, and per-collection storage statistics.
+
+---
+
 ## Examples
 
 ### List Available Models
@@ -114,6 +180,15 @@ clank prompt -m llama2 -s "You are a helpful assistant" -u "Explain quantum comp
 clank prompt -m llama2 -i image1.png "Describe the content of the image."
 ```
 
+### Prompt with Document Context
+
+`--db` searches a vector db for the passages closest in meaning to the prompt and prepends them in front of the prompt as background context. Point it at a database file, or at a directory to index in memory on the fly:
+
+```bash
+clank prompt --db notes.vdb "What did I decide about the refund policy?"
+clank prompt --db ~/notes "What did I decide about the refund policy?"
+```
+
 ### List an MCP Server's Functions
 
 ```bash
@@ -124,6 +199,21 @@ clank mcp --tool http://127.0.0.1:8080/mcp
 
 ```bash
 clank mcp function add a=2 b=3 --tool http://127.0.0.1:8080/mcp
+```
+
+### Search a Directory of Documents
+
+For a one-off search, query the directory directly; it is indexed in memory on the fly and nothing is written to disk:
+
+```bash
+clank db query ~/notes "what did I decide about the refund policy?"
+```
+
+For a database that persists between runs:
+
+```bash
+clank db load notes.vdb ~/notes
+clank db query notes.vdb "what did I decide about the refund policy?"
 ```
 
 ---

@@ -252,6 +252,22 @@ func Run(cmd *cobra.Command, args []string) error { //nolint:gocyclo,maintidx
 		}
 	}
 
+	// Search the vector db for context and prepend it to the user prompt.
+	dbPath, err := cmd.Flags().GetString("db")
+	if err != nil {
+		return err
+	}
+
+	userPrompt, err = PrefixWithDBSearch(cmd.Context(), dbPath, userPrompt)
+	if err != nil {
+		slog.Error("Unable to search db",
+			"db", dbPath,
+			"err", err,
+		)
+
+		return err
+	}
+
 	//if userPrompt != "" {
 	messages = append(messages, api.Message{
 		Role:    "user",
